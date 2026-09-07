@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LM Studio Remote</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/index.css">
+    <meta name="theme-color" content="#0f1115">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>LM Studio</h1>
+            <div class="status-indicator">
+                <span class="dot offline" id="statusDot"></span>
+                <span id="statusText">Hors ligne</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- SERVEUR LOCAL -->
+            <section class="card control-panel">
+                <h2>Serveur Local</h2>
+                <div class="server-actions">
+                    <button id="btnStart" class="btn primary">Démarrer</button>
+                    <button id="btnStop" class="btn danger">Arrêter</button>
+                </div>
+            </section>
+
+            <!-- PARAMÈTRES ET MODÈLE -->
+            <section class="card settings-panel">
+                <h2>Paramètres du Modèle</h2>
+                
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <label for="modelSelect">Modèle Actif</label>
+                    </div>
+                    <select id="modelSelect" class="form-select">
+                        <option value="">Chargement des modèles...</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <label for="temperature">Température</label>
+                        <span id="tempValue">0.7</span>
+                    </div>
+                    <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <label for="maxTokens">Contexte Max (Tokens)</label>
+                        <span id="tokensValue">-1 (Infini)</span>
+                    </div>
+                    <input type="range" id="maxTokens" min="-1" max="32768" step="256" value="-1">
+                </div>
+                <!-- Le bouton Appliquer a été retiré, les paramètres seront envoyés avec chaque message -->
+            </section>
+
+            <!-- CHAT INTERFACE -->
+            <section class="card chat-panel">
+                <div class="chat-header">
+                    <h2 id="chatTitle">Chat</h2>
+                    <div class="chat-actions">
+                        <button id="btnSystem" class="btn-icon" style="display:none;" title="Directives de l'IA (Contexte)">⚙️</button>
+                        <button id="btnTrackers" class="btn-icon" style="display:none;" title="Gérer le suivi de l'état (Inventaire, etc)">📋</button>
+                        <button id="btnRename" class="btn-icon" style="display:none;" title="Renommer la conversation">✏️</button>
+                        <button id="btnUndo" class="btn-icon" style="display:none;" title="Annuler le dernier message">↩️</button>
+                        <button id="btnFullscreen" class="btn-icon" title="Plein écran">⛶</button>
+                        <button id="btnNewChat" class="btn-icon">Nouveau</button>
+                    </div>
+                </div>
+                
+                <div id="chatMessages" class="chat-messages">
+                    <div class="message system">Démarrez le serveur pour commencer à discuter.</div>
+                </div>
+
+                <div class="chat-input-area">
+                    <textarea id="chatInput" placeholder="Écrivez un message..." rows="1"></textarea>
+                    <button id="btnSend" class="btn primary btn-send">Envoyer</button>
+                </div>
+
+                <!-- MODAL TRACKERS -->
+                <div id="trackersModal" class="modal" style="display:none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2>Suivi d'état (Trackers)</h2>
+                            <button id="btnCloseTrackers" class="btn-icon">❌</button>
+                        </div>
+                        <div class="modal-body" id="trackersList">
+                            <!-- Les trackers seront injectés ici -->
+                        </div>
+                        <div class="modal-footer">
+                            <button id="btnAddTracker" class="btn secondary">+ Ajouter un tracker</button>
+                            <button id="btnSaveTrackers" class="btn primary">Sauvegarder</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODAL SYSTEM PROMPT -->
+                <div id="systemModal" class="modal" style="display:none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2>Directives de l'IA</h2>
+                            <button id="btnCloseSystem" class="btn-icon">❌</button>
+                        </div>
+                        <div class="modal-body">
+                            <p style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">
+                                Définissez ici le rôle de l'IA, le ton de la narration, et le contexte global de l'histoire.
+                            </p>
+                            <textarea id="systemPromptInput" style="width:100%; height:150px; background:var(--bg-color); border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text-primary); font-family:inherit; resize:vertical; outline:none;"></textarea>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="btnSaveSystem" class="btn primary">Sauvegarder</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOAST NOTIFICATION -->
+                <div id="toastNotification" class="toast" style="display:none;">
+                    <span id="toastMessage"></span>
+                </div>
+            </section>
+
+            <!-- CONVERSATIONS -->
+            <section class="card conversations-panel">
+                <h2>Conversations (PC)</h2>
+                <ul id="conversationList" class="conversation-list">
+                    <li class="empty-state">Aucune conversation chargée</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
