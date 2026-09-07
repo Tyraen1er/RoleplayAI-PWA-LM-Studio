@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
         print(f"Erreur lors de l'arrêt de LM Studio: {e}")
 
 app = FastAPI(title="LM Studio Controller API", lifespan=lifespan)
+
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.endswith((".js", ".css", ".html", "/")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 # Chemin absolu vers les dossiers
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

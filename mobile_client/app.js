@@ -334,15 +334,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const header = document.createElement('div');
         header.className = 'tracker-header';
         header.innerHTML = `
-            <input type="text" class="tracker-name" value="${name}" placeholder="Catégorie (ex: Inventaire)">
+            <input type="text" class="tracker-name" value="${name}" placeholder="Nom du Tracker (ex: inventaire)">
             <button class="btn-remove-tracker" title="Supprimer catégorie">❌</button>
         `;
 
         const descContainer = document.createElement('div');
         descContainer.className = 'tracker-desc-container';
         descContainer.innerHTML = `
-            <input type="text" class="tracker-desc" value="${desc}" placeholder="Description / Règle (ex: Armes, armures et objets de quête possédés)">
+            <label class="tracker-field-label">📝 Description / Règle pour l'IA :</label>
+            <textarea class="tracker-desc" rows="2" placeholder="Ex: Les armes, armures possédées par le joueur et objets de quêtes">${desc}</textarea>
         `;
+
+        const itemsHeader = document.createElement('div');
+        itemsHeader.className = 'tracker-field-label';
+        itemsHeader.style.marginTop = '10px';
+        itemsHeader.textContent = "📦 Éléments suivis :";
         
         const rowsContainer = document.createElement('div');
         rowsContainer.className = 'tracker-rows';
@@ -370,11 +376,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const btnAddRow = document.createElement('button');
         btnAddRow.className = 'btn-add-row';
-        btnAddRow.textContent = "+ Ajouter une ligne";
+        btnAddRow.textContent = "+ Ajouter un élément";
         btnAddRow.onclick = () => addRow();
         
         div.appendChild(header);
         div.appendChild(descContainer);
+        div.appendChild(itemsHeader);
         div.appendChild(rowsContainer);
         div.appendChild(btnAddRow);
         
