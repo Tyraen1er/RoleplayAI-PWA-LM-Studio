@@ -379,13 +379,14 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
         f"2. Output a flat JSON object where each key is a single attribute/item and the value is its state/description string.\n"
         f"   Example (Inventory): {{\"Iron Sword\": \"1\", \"Healing Potion\": \"2\", \"Gold\": \"50\"}}\n"
         f"   Example (Physical Traits): {{\"Height\": \"1m73\", \"Age\": \"33 years\", \"Body Frame\": \"Toned and slender\", \"Eyes\": \"Blue\", \"Hair\": \"Long and brown\"}}\n"
-        f"3. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
-        f"4. Output ONLY a flat raw JSON object with individual keys. Do NOT wrap in parent categories."
+        f"3. All keys and values MUST be strictly in English (e.g. use 'Height' not 'Taille', 'Age' not 'Âge', 'Body Frame' not 'Corpulence', 'Eyes' not 'Yeux', 'Hair' not 'Cheveux'). Do NOT use French.\n"
+        f"4. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
+        f"5. Output ONLY a flat raw JSON object with individual keys. Do NOT wrap in parent categories."
     )
     
     payload = {
         "messages": [
-            {"role": "system", "content": "You are a state extraction assistant that responds strictly in flat, valid raw JSON. No prose, no markdown wrappers."},
+            {"role": "system", "content": "You are a state extraction assistant that responds strictly in flat, valid raw JSON in English. All keys and values must be in English. No prose, no markdown wrappers."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
@@ -500,12 +501,13 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
             "   - You can add new keys to categories if the player acquires something new matching that category's description.\n"
             "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
-            "4. Your output MUST be a valid JSON object matching this structure without markdown codeblocks."
+            "4. All keys and values MUST be strictly in English.\n"
+            "5. Your output MUST be a valid JSON object matching this structure without markdown codeblocks."
         )
         
         payload = {
             "messages": [
-                {"role": "system", "content": "You are a state-tracking assistant that responds strictly in valid raw JSON. No prose, no markdown."},
+                {"role": "system", "content": "You are a state-tracking assistant that responds strictly in valid raw JSON in English. All keys and values must be in English. No prose, no markdown."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,  # Faible température pour éviter les hallucinations
