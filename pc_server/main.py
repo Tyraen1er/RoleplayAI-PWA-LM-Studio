@@ -308,7 +308,7 @@ def update_system_prompt(conv_id: str, request: SystemPromptUpdate):
     return {"status": "success"}
 
 def update_trackers_background(conv_id: str, last_action: str, ai_response: str, model: str):
-    """Tâche de fond qui demande à LM Studio de mettre à jour les trackers."""
+    """Tâche de fond qui demande à LM Studio de mettre à jour les trackers en un seul appel avec response_format."""
     file_path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
     if not os.path.exists(file_path):
         return
@@ -319,76 +319,87 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             
         trackers = conv_data.get("trackers", {})
         if not trackers:
-            return # Aucun tracking actif
+            return  # Aucun tracking actif
             
-        updated_any = False
+        prompt = (
+            "You are a state-tracking AI for a text adventure game. Your task is to update the player's tracking sheets based on the latest narrative event.\n\n"
+            f"Current state across all categories:\n{json.dumps(trackers, indent=2, ensure_ascii=False)}\n\n"
+            f"Latest event:\nPlayer: {last_action}\nGame: {ai_response}\n\n"
+            "Instructions:\n"
+            "1. Analyze the event carefully. Did the player gain, lose, modify, or use something related to any tracked category?\n"
+            "2. If no state changes occurred in any category, return an empty JSON object: {}\n"
+            "3. If any category changed, return a JSON object with category names as keys, and objects containing ONLY the modified or newly added keys and their updated values.\n"
+            "   - NEVER delete an existing key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
+            "   - You can add new keys to categories if the player acquires something new.\n"
+            "4. Your output MUST be a valid JSON object matching this structure."
+        )
         
-        for t_name, t_dict in trackers.items():
-            prompt = (
-                f"You are a state-tracking AI for a text adventure game. Your task is to update the player's tracking sheet based on the latest narrative event.\n\n"
-                f"Tracked category: '{t_name}'\n"
-                f"Current state:\n{json.dumps(t_dict, indent=2)}\n\n"
-                f"Latest event:\nPlayer: {last_action}\nGame: {ai_response}\n\n"
-                f"Instructions:\n"
-                f"1. Analyze the event. Did the player gain, lose, or use something related to '{t_name}'? Did their state change?\n"
-                f"2. If the event does NOT affect the tracked category '{t_name}', you MUST output EXACTLY and ONLY: NO_CHANGE\n"
-                f"3. If the event DOES affect it, output ONLY a valid JSON object containing the UPDATED or NEW keys and their values.\n"
-                f"   - NEVER delete a key. If an item is lost or depleted, set its value to '0' or 'None'.\n"
-                f"   - You can add new keys if the player acquires something new.\n"
-                f"   - Do NOT wrap your response in markdown code blocks. Output raw JSON or NO_CHANGE."
-            )
+        payload = {
+            "messages": [
+                {"role": "system", "content": "You are a state-tracking assistant that responds strictly in valid JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,  # Faible température pour éviter les hallucinations
+            "stream": False,
+            "response_format": {"type": "json_object"}
+        }
+        if model:
+            payload["model"] = model
             
-            payload = {
-                "messages": [
-                    {"role": "system", "content": "You output only exactly what is requested (JSON or NO_CHANGE). No prose."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.1, # Très faible température pour éviter les hallucinations
-                "stream": False
-            }
-            if model:
-                payload["model"] = model
-                
-            logging.info(f"--- TRACKING BACKGROUND: Vérification de '{t_name}' ---")
-            resp = requests.post(f"{LM_STUDIO_API}/chat/completions", json=payload, timeout=30)
-            if resp.status_code == 200:
-                result_text = resp.json()["choices"][0]["message"]["content"].strip()
-                logging.info(f"Résultat LLM pour '{t_name}':\n{result_text}")
-                
-                # On nettoie si l'IA a mis des blocs markdown
-                if result_text.startswith("```json"):
-                    result_text = result_text[7:]
-                if result_text.startswith("```"):
-                    result_text = result_text[3:]
-                if result_text.endswith("```"):
-                    result_text = result_text[:-3]
-                result_text = result_text.strip()
-                    
-                if result_text != "NO_CHANGE" and "NO_CHANGE" not in result_text.upper():
-                    try:
-                        parsed_json = json.loads(result_text)
-                        if isinstance(parsed_json, dict):
-                            # Mise à jour du dictionnaire existant (fusion)
-                            for k, v in parsed_json.items():
-                                trackers[t_name][k] = str(v)
+        logging.info("--- TRACKING BACKGROUND: Vérification globale des trackers (appel unique batché) ---")
+        resp = requests.post(f"{LM_STUDIO_API}/chat/completions", json=payload, timeout=45)
+        if resp.status_code == 200:
+            result_text = resp.json()["choices"][0]["message"]["content"].strip()
+            logging.info(f"Résultat LLM global pour les trackers:\n{result_text}")
+            
+            # Nettoyage de sécurité si le modèle a inclus des balises markdown
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+            
+            try:
+                parsed_json = json.loads(result_text)
+                if isinstance(parsed_json, dict) and parsed_json:
+                    # Gérer les formats où le LLM encapsule dans une clé
+                    updates_dict = parsed_json
+                    if "updates" in parsed_json and isinstance(parsed_json["updates"], dict):
+                        updates_dict = parsed_json["updates"]
+                    elif "categories" in parsed_json and isinstance(parsed_json["categories"], dict):
+                        updates_dict = parsed_json["categories"]
+                        
+                    updated_any = False
+                    for cat_name, cat_updates in updates_dict.items():
+                        if cat_name in trackers and isinstance(cat_updates, dict):
+                            for k, v in cat_updates.items():
+                                trackers[cat_name][k] = str(v)
+                                updated_any = True
+                                logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                        elif isinstance(cat_updates, dict) and cat_name not in ["has_changes", "status"]:
+                            trackers[cat_name] = {k: str(v) for k, v in cat_updates.items()}
                             updated_any = True
-                            logging.info(f"Tracker '{t_name}' mis à jour !")
-                    except json.JSONDecodeError:
-                        logging.error(f"Le LLM n'a pas renvoyé un JSON valide pour '{t_name}'.")
-            else:
-                logging.error(f"Erreur API lors du tracking: {resp.status_code}")
-                
-        # Sauvegarde finale si un changement a eu lieu
-        if updated_any:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                fresh_data = json.load(f)
-            fresh_data["trackers"] = trackers
-            fresh_data["last_tracker_update"] = time.time()
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(fresh_data, f, ensure_ascii=False, indent=2)
-                
+                            logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {cat_updates}")
+                            
+                    # Sauvegarde finale si un changement a eu lieu
+                    if updated_any:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            fresh_data = json.load(f)
+                        fresh_data["trackers"] = trackers
+                        fresh_data["last_tracker_update"] = time.time()
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            json.dump(fresh_data, f, ensure_ascii=False, indent=2)
+                        logging.info("Sauvegarde des trackers réussie.")
+            except json.JSONDecodeError as e:
+                logging.error(f"Le LLM n'a pas renvoyé un JSON valide pour les trackers: {e}")
+        else:
+            logging.error(f"Erreur API lors du tracking global: {resp.status_code} - {resp.text}")
+            
     except Exception as e:
         logging.error(f"Erreur dans la tâche de fond de tracking: {e}")
+
 
 @app.post("/api/chat")
 def chat_with_lmstudio(request: ChatRequest, background_tasks: BackgroundTasks):
