@@ -215,7 +215,7 @@ def list_conversations():
                     data = json.load(f)
                     conversations.append({
                         "id": conv_id,
-                        "name": data.get("name", "Nouvelle Conversation"),
+                        "name": data.get("name", "New Conversation"),
                         "updated_at": os.path.getmtime(os.path.join(CONVERSATIONS_DIR, filename))
                     })
             except Exception:
@@ -236,7 +236,7 @@ def get_conversation(conv_id: str):
 def create_new_conversation():
     conv_id = str(uuid.uuid4())
     conv_data = {
-        "name": "Nouvelle Conversation",
+        "name": "New Conversation",
         "messages": [],
         "summaries": [],
         "trackers": {},
@@ -377,8 +377,8 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
         f"Instructions:\n"
         f"1. Break down the category into individual, separate keys for each distinct feature, stat, or item.\n"
         f"2. Output a flat JSON object where each key is a single attribute/item and the value is its state/description string.\n"
-        f"   Example (Inventory): {{\"Epée de fer\": \"1\", \"Potion de soin\": \"2\", \"Or\": \"50\"}}\n"
-        f"   Example (Physical Traits): {{\"Taille\": \"1m73\", \"Âge\": \"33 ans\", \"Corpulence\": \"Élancé\", \"Yeux\": \"Bleus\", \"Cheveux\": \"Longs et bruns\"}}\n"
+        f"   Example (Inventory): {{\"Iron Sword\": \"1\", \"Healing Potion\": \"2\", \"Gold\": \"50\"}}\n"
+        f"   Example (Physical Traits): {{\"Height\": \"1m73\", \"Age\": \"33 years\", \"Body Frame\": \"Toned and slender\", \"Eyes\": \"Blue\", \"Hair\": \"Long and brown\"}}\n"
         f"3. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
         f"4. Output ONLY a flat raw JSON object with individual keys. Do NOT wrap in parent categories."
     )
@@ -496,7 +496,7 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             "1. Analyze the event carefully using the description/scope of each category to determine which category is affected.\n"
             "2. If no state changes occurred in any category, return an empty JSON object: {}\n"
             "3. If any category changed, return a JSON object with category names as keys, and objects containing ONLY the modified or newly added item keys and their updated values.\n"
-            "   Example: {\"inventaire\": {\"Epée d'argent\": \"1\", \"Potion de soin\": \"0\"}}\n"
+            "   Example: {\"inventory\": {\"Silver Sword\": \"1\", \"Healing Potion\": \"0\"}}\n"
             "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
             "   - You can add new keys to categories if the player acquires something new matching that category's description.\n"
             "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
@@ -692,8 +692,9 @@ def chat_with_lmstudio(request: ChatRequest, background_tasks: BackgroundTasks):
     # Directives narratives et anti-méta
     narrative_rules = (
         "\n\n[Narrative Guidelines]\n"
-        "1. Write solely the ongoing literary story, rich sensory descriptions, and character dialogues.\n"
-        "2. Do NOT output system tags, bracketed headers, status screens, question lists, or inventory blocks (e.g., do not write [MEMORY BLOCKS], [INVENTORY], [NEW EVENTS], or [QUESTIONS])."
+        "1. Write solely the ongoing literary story, rich sensory descriptions, and character dialogues in English.\n"
+        "2. Do NOT output system tags, bracketed headers, status screens, question lists, or inventory blocks (e.g., do not write [MEMORY BLOCKS], [INVENTORY], [NEW EVENTS], or [QUESTIONS]).\n"
+        "3. Maintain fluent English prose for all descriptions and dialogues unless the player explicitly switches language."
     )
     system_content += narrative_rules
     
