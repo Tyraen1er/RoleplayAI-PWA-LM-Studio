@@ -423,6 +423,9 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
             raise HTTPException(status_code=resp.status_code, detail=f"LM Studio: {error_detail}")
     except HTTPException:
         raise
+    except requests.exceptions.RequestException as e:
+        logging.error(f"LM Studio est inaccessible lors de l'init tracker: {e}")
+        raise HTTPException(status_code=503, detail="LM Studio est hors ligne. Veuillez démarrer le serveur LM Studio sur le port 1234.")
     except Exception as e:
         logging.error(f"Exception lors de l'init tracker: {e}")
         raise HTTPException(status_code=500, detail=str(e))
