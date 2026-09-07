@@ -688,15 +688,7 @@ def chat_with_lmstudio(request: ChatRequest, background_tasks: BackgroundTasks):
     
     # 1. System Prompt (toujours en premier)
     system_content = conv_data.get("system_prompt", "You are an expert interactive narrator conducting a text adventure. Always let the player make their own decisions.")
-    
-    # Directives narratives et anti-méta
-    narrative_rules = (
-        "\n\n[Narrative Guidelines]\n"
-        "1. Write solely the ongoing literary story, rich sensory descriptions, and character dialogues in English.\n"
-        "2. Do NOT output system tags, bracketed headers, status screens, question lists, or inventory blocks (e.g., do not write [MEMORY BLOCKS], [INVENTORY], [NEW EVENTS], or [QUESTIONS]).\n"
-        "3. Maintain fluent English prose for all descriptions and dialogues unless the player explicitly switches language."
-    )
-    system_content += narrative_rules
+
     
     # Trackers / État du monde et du joueur
     if conv_data.get("trackers"):
