@@ -86,6 +86,11 @@ class RenameRequest(BaseModel):
 class TrackersUpdate(BaseModel):
     trackers: Dict[str, Any]
 
+class TrackerInitRequest(BaseModel):
+    category_name: str
+    description: Optional[str] = ""
+    model: Optional[str] = ""
+
 def format_trackers_for_prompt(trackers: Dict[str, Any]) -> str:
     """Formate les trackers de manière propre et universelle pour le contexte système."""
     if not trackers:
@@ -299,6 +304,96 @@ def update_trackers_endpoint(conv_id: str, request: TrackersUpdate):
         json.dump(conv_data, f, ensure_ascii=False, indent=2)
         
     return {"status": "success"}
+
+@app.post("/api/conversations/{conv_id}/trackers/initialize")
+def initialize_tracker(conv_id: str, request: TrackerInitRequest):
+    """Analyse les derniers messages non compressés pour déterminer les objets et valeurs du tracker."""
+    file_path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+        
+    with open(file_path, 'r', encoding='utf-8') as f:
+        conv_data = json.load(f)
+        
+    messages = conv_data.get("messages", [])
+    if not messages:
+        return {"status": "success", "items": {}}
+        
+    # Extraire les messages non-compressés (à partir de last_compressed_index)
+    start_idx = conv_data.get("last_compressed_index", 0)
+    uncompressed_messages = messages[start_idx:] if start_idx < len(messages) else messages
+    
+    # Construire le texte de contexte narratif
+    story_parts = []
+    if conv_data.get("summaries"):
+        story_parts.append("Past Story Summary:\n" + "\n".join(conv_data["summaries"]))
+        
+    story_parts.append("Recent Conversation Turns:")
+    for msg in uncompressed_messages:
+        role = "Player" if msg["role"] == "user" else "Narrator"
+        story_parts.append(f"{role}: {msg['content']}")
+        
+    story_context = "\n\n".join(story_parts)
+    
+    prompt = (
+        f"You are a state-tracking AI for a text adventure game.\n"
+        f"Your task is to analyze the recent narrative events and extract all initial items, states, equipment, or values belonging to the tracker category '{request.category_name}'.\n\n"
+        f"Category Name: '{request.category_name}'\n"
+        f"Category Description / Scope: '{request.description or 'Extract all relevant elements'}'\n\n"
+        f"Narrative Context:\n{story_context}\n\n"
+        f"Instructions:\n"
+        f"1. Carefully identify what items, stats, or elements the player currently possesses or are established in the narrative matching this category.\n"
+        f"2. Output ONLY a valid JSON object mapping each item/stat name to its current quantity, state, or value string.\n"
+        f"   Example: {{\"Epée de fer\": \"1\", \"Potion de soin\": \"2\", \"Or\": \"50\"}}\n"
+        f"3. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
+        f"4. Do NOT wrap your output in markdown prose. Output strict JSON."
+    )
+    
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a state extraction assistant that responds strictly in valid JSON format."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "stream": False,
+        "response_format": {"type": "json_object"}
+    }
+    if request.model:
+        payload["model"] = request.model
+        
+    logging.info(f"--- INITIALISATION TRACKER: '{request.category_name}' ---")
+    try:
+        resp = requests.post(f"{LM_STUDIO_API}/chat/completions", json=payload, timeout=60)
+        if resp.status_code == 200:
+            result_text = resp.json()["choices"][0]["message"]["content"].strip()
+            logging.info(f"Résultat extraction LLM pour '{request.category_name}': {result_text}")
+            
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+            
+            parsed = json.loads(result_text)
+            if isinstance(parsed, dict):
+                # Si le modèle a encapsulé dans 'items' ou dans le nom de la catégorie
+                if request.category_name in parsed and isinstance(parsed[request.category_name], dict):
+                    items = parsed[request.category_name]
+                elif "items" in parsed and isinstance(parsed["items"], dict):
+                    items = parsed["items"]
+                else:
+                    items = {k: str(v) for k, v in parsed.items() if k not in ["category", "description", "status"]}
+                return {"status": "success", "items": items}
+        else:
+            logging.error(f"Erreur LM Studio lors de l'init tracker: {resp.status_code}")
+            raise HTTPException(status_code=500, detail="Erreur de communication avec LM Studio")
+    except Exception as e:
+        logging.error(f"Exception lors de l'init tracker: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"status": "success", "items": {}}
 
 @app.get("/api/conversations/{conv_id}/system")
 def get_system_prompt(conv_id: str):

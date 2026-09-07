@@ -335,7 +335,10 @@ document.addEventListener('DOMContentLoaded', () => {
         header.className = 'tracker-header';
         header.innerHTML = `
             <input type="text" class="tracker-name" value="${name}" placeholder="Nom du Tracker (ex: inventaire)">
-            <button class="btn-remove-tracker" title="Supprimer catégorie">❌</button>
+            <div class="tracker-header-actions">
+                <button class="btn-init-tracker" title="Détecter les éléments via l'IA d'après les derniers messages">🪄 Initialiser</button>
+                <button class="btn-remove-tracker" title="Supprimer catégorie">❌</button>
+            </div>
         `;
 
         const descContainer = document.createElement('div');
@@ -386,6 +389,66 @@ document.addEventListener('DOMContentLoaded', () => {
         div.appendChild(btnAddRow);
         
         header.querySelector('.btn-remove-tracker').onclick = () => div.remove();
+
+        const btnInit = header.querySelector('.btn-init-tracker');
+        btnInit.onclick = async () => {
+            const currentName = div.querySelector('.tracker-name').value.trim();
+            const currentDesc = div.querySelector('.tracker-desc').value.trim();
+            
+            if (!currentName) {
+                showToast("Veuillez d'abord donner un nom à ce tracker !");
+                div.querySelector('.tracker-name').focus();
+                return;
+            }
+            
+            if (!currentConversationId) {
+                showToast("Aucune conversation active.");
+                return;
+            }
+            
+            btnInit.textContent = "🪄 Analyse...";
+            btnInit.disabled = true;
+            btnInit.style.opacity = "0.7";
+            
+            try {
+                const res = await fetch(`/api/conversations/${currentConversationId}/trackers/initialize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: currentName,
+                        description: currentDesc,
+                        model: modelSelect.value
+                    })
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const detectedItems = data.items || {};
+                    const keys = Object.keys(detectedItems);
+                    
+                    if (keys.length === 0) {
+                        showToast("L'IA n'a trouvé aucun élément correspondant dans l'histoire récente.");
+                    } else {
+                        // Vider les lignes existantes et injecter les nouveaux éléments détectés
+                        rowsContainer.innerHTML = '';
+                        for (const [k, v] of Object.entries(detectedItems)) {
+                            addRow(k, v);
+                        }
+                        showToast(`✨ ${keys.length} élément(s) détecté(s) par l'IA !`);
+                    }
+                } else {
+                    const err = await res.json().catch(() => ({ detail: 'Erreur' }));
+                    showToast(`Erreur IA : ${err.detail || 'Impossible d\'initialiser'}`);
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Erreur réseau lors de l'initialisation.");
+            } finally {
+                btnInit.textContent = "🪄 Initialiser";
+                btnInit.disabled = false;
+                btnInit.style.opacity = "1";
+            }
+        };
         
         trackersList.appendChild(div);
     }
