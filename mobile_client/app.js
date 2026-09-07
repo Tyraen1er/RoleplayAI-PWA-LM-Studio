@@ -313,15 +313,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LOGIQUE TRACKERS ---
     
-    function createTrackerDOM(name = "", items = {}) {
+    function createTrackerDOM(name = "", data = {}) {
         const div = document.createElement('div');
         div.className = 'tracker-item';
+        
+        let desc = "";
+        let items = {};
+        if (data && typeof data === 'object') {
+            if ('items' in data && typeof data.items === 'object') {
+                desc = data.description || "";
+                items = data.items || {};
+            } else {
+                desc = data.description || data._description || "";
+                items = { ...data };
+                delete items.description;
+                delete items._description;
+            }
+        }
         
         const header = document.createElement('div');
         header.className = 'tracker-header';
         header.innerHTML = `
             <input type="text" class="tracker-name" value="${name}" placeholder="Catégorie (ex: Inventaire)">
             <button class="btn-remove-tracker" title="Supprimer catégorie">❌</button>
+        `;
+
+        const descContainer = document.createElement('div');
+        descContainer.className = 'tracker-desc-container';
+        descContainer.innerHTML = `
+            <input type="text" class="tracker-desc" value="${desc}" placeholder="Description / Règle (ex: Armes, armures et objets de quête possédés)">
         `;
         
         const rowsContainer = document.createElement('div');
@@ -331,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('div');
             row.className = 'tracker-row';
             row.innerHTML = `
-                <input type="text" class="tracker-key" value="${k}" placeholder="Objet">
+                <input type="text" class="tracker-key" value="${k}" placeholder="Objet / Stat">
                 <span>:</span>
                 <input type="text" class="tracker-val" value="${v}" placeholder="Quantité / État">
                 <button class="btn-remove-row" title="Supprimer ligne">✖</button>
@@ -340,13 +360,10 @@ document.addEventListener('DOMContentLoaded', () => {
             rowsContainer.appendChild(row);
         }
         
-        let safeItems = items;
-        if (typeof safeItems === 'string') safeItems = {};
-        
-        if (Object.keys(safeItems).length === 0) {
+        if (Object.keys(items).length === 0) {
             addRow(); 
         } else {
-            for (const [k, v] of Object.entries(safeItems)) {
+            for (const [k, v] of Object.entries(items)) {
                 addRow(k, v);
             }
         }
@@ -357,6 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnAddRow.onclick = () => addRow();
         
         div.appendChild(header);
+        div.appendChild(descContainer);
         div.appendChild(rowsContainer);
         div.appendChild(btnAddRow);
         
@@ -405,15 +423,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const newTrackers = {};
         document.querySelectorAll('.tracker-item').forEach(item => {
             const nameInput = item.querySelector('.tracker-name').value.trim();
+            const descInput = item.querySelector('.tracker-desc')?.value.trim() || "";
             if (nameInput) {
-                newTrackers[nameInput] = {};
+                const itemsObj = {};
                 item.querySelectorAll('.tracker-row').forEach(row => {
                     const k = row.querySelector('.tracker-key').value.trim();
                     const v = row.querySelector('.tracker-val').value.trim();
                     if (k) {
-                        newTrackers[nameInput][k] = v;
+                        itemsObj[k] = v;
                     }
                 });
+                newTrackers[nameInput] = {
+                    description: descInput,
+                    items: itemsObj
+                };
             }
         });
         

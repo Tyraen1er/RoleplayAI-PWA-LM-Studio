@@ -424,6 +424,28 @@ input[type=range]::-webkit-slider-runnable-track {
     outline: none;
 }
 
+.tracker-desc-container {
+    margin-bottom: 12px;
+}
+
+.tracker-desc {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-style: italic;
+    outline: none;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.tracker-desc:focus {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
 .tracker-rows {
     display: flex;
     flex-direction: column;

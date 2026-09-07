@@ -89,14 +89,27 @@ def format_trackers_for_prompt(trackers: Dict[str, Any]) -> str:
     for category_name, category_content in trackers.items():
         lines.append(f"\n[Category: {category_name}]")
         if isinstance(category_content, dict):
-            for k, v in category_content.items():
-                if isinstance(v, list):
-                    lines.append(f"- {k}: {', '.join(str(item) for item in v)}")
-                elif isinstance(v, dict):
-                    inner_str = ", ".join(f"{ik}: {iv}" for ik, iv in v.items())
-                    lines.append(f"- {k}: {inner_str}")
-                else:
+            # Nouveau format {description, items}
+            if "items" in category_content and isinstance(category_content["items"], dict):
+                desc = category_content.get("description", "").strip()
+                if desc:
+                    lines.append(f"Description / Scope: {desc}")
+                for k, v in category_content["items"].items():
                     lines.append(f"- {k}: {v}")
+            else:
+                # Format plat ou rétrocompatible
+                desc = category_content.get("description", "").strip() if "description" in category_content else ""
+                if desc:
+                    lines.append(f"Description / Scope: {desc}")
+                for k, v in category_content.items():
+                    if k != "description":
+                        if isinstance(v, list):
+                            lines.append(f"- {k}: {', '.join(str(item) for item in v)}")
+                        elif isinstance(v, dict):
+                            inner_str = ", ".join(f"{ik}: {iv}" for ik, iv in v.items())
+                            lines.append(f"- {k}: {inner_str}")
+                        else:
+                            lines.append(f"- {k}: {v}")
         elif isinstance(category_content, list):
             for item in category_content:
                 lines.append(f"- {item}")
@@ -323,14 +336,16 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             
         prompt = (
             "You are a state-tracking AI for a text adventure game. Your task is to update the player's tracking sheets based on the latest narrative event.\n\n"
-            f"Current state across all categories:\n{json.dumps(trackers, indent=2, ensure_ascii=False)}\n\n"
+            f"Current state across all categories (including category descriptions and items):\n{json.dumps(trackers, indent=2, ensure_ascii=False)}\n\n"
             f"Latest event:\nPlayer: {last_action}\nGame: {ai_response}\n\n"
             "Instructions:\n"
-            "1. Analyze the event carefully. Did the player gain, lose, modify, or use something related to any tracked category?\n"
+            "1. Analyze the event carefully using the description/scope of each category to determine which category is affected.\n"
             "2. If no state changes occurred in any category, return an empty JSON object: {}\n"
-            "3. If any category changed, return a JSON object with category names as keys, and objects containing ONLY the modified or newly added keys and their updated values.\n"
-            "   - NEVER delete an existing key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
-            "   - You can add new keys to categories if the player acquires something new.\n"
+            "3. If any category changed, return a JSON object with category names as keys, and objects containing ONLY the modified or newly added item keys and their updated values.\n"
+            "   Example: {\"inventaire\": {\"Epée d'argent\": \"1\", \"Potion de soin\": \"0\"}}\n"
+            "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
+            "   - You can add new keys to categories if the player acquires something new matching that category's description.\n"
+            "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
             "4. Your output MUST be a valid JSON object matching this structure."
         )
         
@@ -374,12 +389,24 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
                     updated_any = False
                     for cat_name, cat_updates in updates_dict.items():
                         if cat_name in trackers and isinstance(cat_updates, dict):
-                            for k, v in cat_updates.items():
-                                trackers[cat_name][k] = str(v)
-                                updated_any = True
-                                logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                            # Si le tracker est au format {description, items}
+                            if "items" in trackers[cat_name] and isinstance(trackers[cat_name]["items"], dict):
+                                for k, v in cat_updates.items():
+                                    if k != "description":
+                                        trackers[cat_name]["items"][k] = str(v)
+                                        updated_any = True
+                                        logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                            else:
+                                for k, v in cat_updates.items():
+                                    if k != "description":
+                                        trackers[cat_name][k] = str(v)
+                                        updated_any = True
+                                        logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
                         elif isinstance(cat_updates, dict) and cat_name not in ["has_changes", "status"]:
-                            trackers[cat_name] = {k: str(v) for k, v in cat_updates.items()}
+                            trackers[cat_name] = {
+                                "description": "",
+                                "items": {k: str(v) for k, v in cat_updates.items() if k != "description"}
+                            }
                             updated_any = True
                             logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {cat_updates}")
                             
