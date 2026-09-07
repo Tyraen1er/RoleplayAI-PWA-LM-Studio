@@ -370,21 +370,22 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
     
     prompt = (
         f"You are a state-tracking AI for a text adventure game.\n"
-        f"Your task is to analyze the recent narrative events and extract all initial items, states, equipment, or values belonging to the tracker category '{request.category_name}'.\n\n"
+        f"Your task is to extract individual characteristics, items, stats, or elements belonging to the tracker category '{request.category_name}'.\n\n"
         f"Category Name: '{request.category_name}'\n"
-        f"Category Description / Scope: '{request.description or 'Extract all relevant elements'}'\n\n"
+        f"Category Description / Scope: '{request.description or 'Extract each individual element or attribute'}'\n\n"
         f"Narrative Context:\n{story_context}\n\n"
         f"Instructions:\n"
-        f"1. Carefully identify what items, stats, or elements the player currently possesses or are established in the narrative matching this category.\n"
-        f"2. Output ONLY a valid JSON object mapping each item/stat name to its current quantity, state, or value string.\n"
-        f"   Example: {{\"Epée de fer\": \"1\", \"Potion de soin\": \"2\", \"Or\": \"50\"}}\n"
+        f"1. Break down the category into individual, separate keys for each distinct feature, stat, or item.\n"
+        f"2. Output a flat JSON object where each key is a single attribute/item and the value is its state/description string.\n"
+        f"   Example (Inventory): {{\"Epée de fer\": \"1\", \"Potion de soin\": \"2\", \"Or\": \"50\"}}\n"
+        f"   Example (Physical Traits): {{\"Taille\": \"1m73\", \"Âge\": \"33 ans\", \"Corpulence\": \"Élancé\", \"Yeux\": \"Bleus\", \"Cheveux\": \"Longs et bruns\"}}\n"
         f"3. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
-        f"4. Do NOT include markdown formatting or commentary. Output raw JSON."
+        f"4. Output ONLY a flat raw JSON object with individual keys. Do NOT wrap in parent categories."
     )
     
     payload = {
         "messages": [
-            {"role": "system", "content": "You are a state extraction assistant that responds strictly in valid raw JSON. No prose, no markdown wrappers."},
+            {"role": "system", "content": "You are a state extraction assistant that responds strictly in flat, valid raw JSON. No prose, no markdown wrappers."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
@@ -403,13 +404,27 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
             
             parsed = parse_json_from_llm(result_text)
             if isinstance(parsed, dict):
-                # Si le modèle a encapsulé dans 'items' ou dans le nom de la catégorie
-                if request.category_name in parsed and isinstance(parsed[request.category_name], dict):
-                    items = parsed[request.category_name]
-                elif "items" in parsed and isinstance(parsed["items"], dict):
-                    items = parsed["items"]
+                # Désimbrication si le modèle a créé un conteneur parent (ex: {"TYRAEN'S BODY APPEARANCE": {...}})
+                if len(parsed) == 1 and isinstance(list(parsed.values())[0], dict):
+                    raw_items = list(parsed.values())[0]
+                elif request.category_name in parsed and isinstance(parsed[request.category_name], dict):
+                    raw_items = parsed[request.category_name]
                 else:
-                    items = {k: str(v) for k, v in parsed.items() if k not in ["category", "description", "status", "has_changes"]}
+                    matched_k = next((k for k in parsed.keys() if k.lower() in [request.category_name.lower(), "items", "features", "attributes", "elements"]), None)
+                    if matched_k and isinstance(parsed[matched_k], dict):
+                        raw_items = parsed[matched_k]
+                    else:
+                        raw_items = parsed
+                
+                # Aplatir proprement chaque sous-clé
+                items = {}
+                for k, v in raw_items.items():
+                    if str(k).lower() not in ["category", "description", "status", "has_changes"]:
+                        if isinstance(v, dict):
+                            for sub_k, sub_v in v.items():
+                                items[str(sub_k)] = str(sub_v)
+                        else:
+                            items[str(k)] = str(v)
                 return {"status": "success", "items": items}
             return {"status": "success", "items": {}}
         else:
@@ -516,27 +531,42 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
                     
                 updated_any = False
                 for cat_name, cat_updates in updates_dict.items():
-                    if cat_name in trackers and isinstance(cat_updates, dict):
-                        # Si le tracker est au format {description, items}
-                        if "items" in trackers[cat_name] and isinstance(trackers[cat_name]["items"], dict):
-                            for k, v in cat_updates.items():
-                                if k != "description":
-                                    trackers[cat_name]["items"][k] = str(v)
-                                    updated_any = True
-                                    logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                    if not isinstance(cat_updates, dict):
+                        continue
+                        
+                    # Si cat_updates contient lui-même un sous-dict imbriqué unique
+                    if len(cat_updates) == 1 and isinstance(list(cat_updates.values())[0], dict):
+                        cat_updates = list(cat_updates.values())[0]
+                        
+                    flat_updates = {}
+                    for k, v in cat_updates.items():
+                        if k != "description":
+                            if isinstance(v, dict):
+                                for sub_k, sub_v in v.items():
+                                    flat_updates[str(sub_k)] = str(sub_v)
+                            else:
+                                flat_updates[str(k)] = str(v)
+                                
+                    target_cat = cat_name if cat_name in trackers else next((c for c in trackers.keys() if c.lower() == cat_name.lower()), None)
+                    
+                    if target_cat:
+                        if "items" in trackers[target_cat] and isinstance(trackers[target_cat]["items"], dict):
+                            for k, v in flat_updates.items():
+                                trackers[target_cat]["items"][k] = v
+                                updated_any = True
+                                logging.info(f"Tracker '{target_cat}' mis à jour : {k} -> {v}")
                         else:
-                            for k, v in cat_updates.items():
-                                if k != "description":
-                                    trackers[cat_name][k] = str(v)
-                                    updated_any = True
-                                    logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                            for k, v in flat_updates.items():
+                                trackers[target_cat][k] = v
+                                updated_any = True
+                                logging.info(f"Tracker '{target_cat}' mis à jour : {k} -> {v}")
                     elif isinstance(cat_updates, dict) and cat_name not in ["has_changes", "status"]:
                         trackers[cat_name] = {
                             "description": "",
-                            "items": {k: str(v) for k, v in cat_updates.items() if k != "description"}
+                            "items": {k: str(v) for k, v in flat_updates.items()}
                         }
                         updated_any = True
-                        logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {cat_updates}")
+                        logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {flat_updates}")
                         
                 # Sauvegarde finale si un changement a eu lieu
                 if updated_any:
