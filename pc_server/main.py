@@ -9,6 +9,7 @@ import os
 import subprocess
 import requests
 import json
+import re
 import uuid
 import time
 import logging
@@ -90,6 +91,38 @@ class TrackerInitRequest(BaseModel):
     category_name: str
     description: Optional[str] = ""
     model: Optional[str] = ""
+
+def parse_json_from_llm(text: str) -> dict:
+    """Extrait et décode proprement un objet JSON retourné par le LLM."""
+    if not text:
+        return {}
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+        
+    # Tentative d'extraction par regex du premier bloc { ... }
+    match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+            
+    return {}
 
 def format_trackers_for_prompt(trackers: Dict[str, Any]) -> str:
     """Formate les trackers de manière propre et universelle pour le contexte système."""
@@ -346,17 +379,16 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
         f"2. Output ONLY a valid JSON object mapping each item/stat name to its current quantity, state, or value string.\n"
         f"   Example: {{\"Epée de fer\": \"1\", \"Potion de soin\": \"2\", \"Or\": \"50\"}}\n"
         f"3. If nothing in the story context fits this category, return an empty JSON object: {{}}\n"
-        f"4. Do NOT wrap your output in markdown prose. Output strict JSON."
+        f"4. Do NOT include markdown formatting or commentary. Output raw JSON."
     )
     
     payload = {
         "messages": [
-            {"role": "system", "content": "You are a state extraction assistant that responds strictly in valid JSON format."},
+            {"role": "system", "content": "You are a state extraction assistant that responds strictly in valid raw JSON. No prose, no markdown wrappers."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "stream": False,
-        "response_format": {"type": "json_object"}
+        "stream": False
     }
     if request.model:
         payload["model"] = request.model
@@ -364,19 +396,12 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
     logging.info(f"--- INITIALISATION TRACKER: '{request.category_name}' ---")
     try:
         resp = requests.post(f"{LM_STUDIO_API}/chat/completions", json=payload, timeout=60)
+        logging.info(f"LM Studio status: {resp.status_code}")
         if resp.status_code == 200:
             result_text = resp.json()["choices"][0]["message"]["content"].strip()
             logging.info(f"Résultat extraction LLM pour '{request.category_name}': {result_text}")
             
-            if result_text.startswith("```json"):
-                result_text = result_text[7:]
-            if result_text.startswith("```"):
-                result_text = result_text[3:]
-            if result_text.endswith("```"):
-                result_text = result_text[:-3]
-            result_text = result_text.strip()
-            
-            parsed = json.loads(result_text)
+            parsed = parse_json_from_llm(result_text)
             if isinstance(parsed, dict):
                 # Si le modèle a encapsulé dans 'items' ou dans le nom de la catégorie
                 if request.category_name in parsed and isinstance(parsed[request.category_name], dict):
@@ -384,16 +409,23 @@ def initialize_tracker(conv_id: str, request: TrackerInitRequest):
                 elif "items" in parsed and isinstance(parsed["items"], dict):
                     items = parsed["items"]
                 else:
-                    items = {k: str(v) for k, v in parsed.items() if k not in ["category", "description", "status"]}
+                    items = {k: str(v) for k, v in parsed.items() if k not in ["category", "description", "status", "has_changes"]}
                 return {"status": "success", "items": items}
+            return {"status": "success", "items": {}}
         else:
-            logging.error(f"Erreur LM Studio lors de l'init tracker: {resp.status_code}")
-            raise HTTPException(status_code=500, detail="Erreur de communication avec LM Studio")
+            error_detail = resp.text
+            try:
+                err_json = resp.json()
+                error_detail = err_json.get("error", {}).get("message", resp.text)
+            except Exception:
+                pass
+            logging.error(f"Erreur LM Studio lors de l'init tracker: {resp.status_code} - {error_detail}")
+            raise HTTPException(status_code=resp.status_code, detail=f"LM Studio: {error_detail}")
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Exception lors de l'init tracker: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-        
-    return {"status": "success", "items": {}}
 
 @app.get("/api/conversations/{conv_id}/system")
 def get_system_prompt(conv_id: str):
@@ -425,7 +457,7 @@ def update_system_prompt(conv_id: str, request: SystemPromptUpdate):
     return {"status": "success"}
 
 def update_trackers_background(conv_id: str, last_action: str, ai_response: str, model: str):
-    """Tâche de fond qui demande à LM Studio de mettre à jour les trackers en un seul appel avec response_format."""
+    """Tâche de fond qui demande à LM Studio de mettre à jour les trackers en un seul appel."""
     file_path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
     if not os.path.exists(file_path):
         return
@@ -450,17 +482,16 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
             "   - You can add new keys to categories if the player acquires something new matching that category's description.\n"
             "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
-            "4. Your output MUST be a valid JSON object matching this structure."
+            "4. Your output MUST be a valid JSON object matching this structure without markdown codeblocks."
         )
         
         payload = {
             "messages": [
-                {"role": "system", "content": "You are a state-tracking assistant that responds strictly in valid JSON format."},
+                {"role": "system", "content": "You are a state-tracking assistant that responds strictly in valid raw JSON. No prose, no markdown."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,  # Faible température pour éviter les hallucinations
-            "stream": False,
-            "response_format": {"type": "json_object"}
+            "stream": False
         }
         if model:
             payload["model"] = model
@@ -471,60 +502,48 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             result_text = resp.json()["choices"][0]["message"]["content"].strip()
             logging.info(f"Résultat LLM global pour les trackers:\n{result_text}")
             
-            # Nettoyage de sécurité si le modèle a inclus des balises markdown
-            if result_text.startswith("```json"):
-                result_text = result_text[7:]
-            if result_text.startswith("```"):
-                result_text = result_text[3:]
-            if result_text.endswith("```"):
-                result_text = result_text[:-3]
-            result_text = result_text.strip()
-            
-            try:
-                parsed_json = json.loads(result_text)
-                if isinstance(parsed_json, dict) and parsed_json:
-                    # Gérer les formats où le LLM encapsule dans une clé
-                    updates_dict = parsed_json
-                    if "updates" in parsed_json and isinstance(parsed_json["updates"], dict):
-                        updates_dict = parsed_json["updates"]
-                    elif "categories" in parsed_json and isinstance(parsed_json["categories"], dict):
-                        updates_dict = parsed_json["categories"]
+            parsed_json = parse_json_from_llm(result_text)
+            if isinstance(parsed_json, dict) and parsed_json:
+                # Gérer les formats où le LLM encapsule dans une clé
+                updates_dict = parsed_json
+                if "updates" in parsed_json and isinstance(parsed_json["updates"], dict):
+                    updates_dict = parsed_json["updates"]
+                elif "categories" in parsed_json and isinstance(parsed_json["categories"], dict):
+                    updates_dict = parsed_json["categories"]
+                    
+                updated_any = False
+                for cat_name, cat_updates in updates_dict.items():
+                    if cat_name in trackers and isinstance(cat_updates, dict):
+                        # Si le tracker est au format {description, items}
+                        if "items" in trackers[cat_name] and isinstance(trackers[cat_name]["items"], dict):
+                            for k, v in cat_updates.items():
+                                if k != "description":
+                                    trackers[cat_name]["items"][k] = str(v)
+                                    updated_any = True
+                                    logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                        else:
+                            for k, v in cat_updates.items():
+                                if k != "description":
+                                    trackers[cat_name][k] = str(v)
+                                    updated_any = True
+                                    logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
+                    elif isinstance(cat_updates, dict) and cat_name not in ["has_changes", "status"]:
+                        trackers[cat_name] = {
+                            "description": "",
+                            "items": {k: str(v) for k, v in cat_updates.items() if k != "description"}
+                        }
+                        updated_any = True
+                        logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {cat_updates}")
                         
-                    updated_any = False
-                    for cat_name, cat_updates in updates_dict.items():
-                        if cat_name in trackers and isinstance(cat_updates, dict):
-                            # Si le tracker est au format {description, items}
-                            if "items" in trackers[cat_name] and isinstance(trackers[cat_name]["items"], dict):
-                                for k, v in cat_updates.items():
-                                    if k != "description":
-                                        trackers[cat_name]["items"][k] = str(v)
-                                        updated_any = True
-                                        logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
-                            else:
-                                for k, v in cat_updates.items():
-                                    if k != "description":
-                                        trackers[cat_name][k] = str(v)
-                                        updated_any = True
-                                        logging.info(f"Tracker '{cat_name}' mis à jour : {k} -> {v}")
-                        elif isinstance(cat_updates, dict) and cat_name not in ["has_changes", "status"]:
-                            trackers[cat_name] = {
-                                "description": "",
-                                "items": {k: str(v) for k, v in cat_updates.items() if k != "description"}
-                            }
-                            updated_any = True
-                            logging.info(f"Nouvelle catégorie tracker '{cat_name}' créée : {cat_updates}")
-                            
-                    # Sauvegarde finale si un changement a eu lieu
-                    if updated_any:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            fresh_data = json.load(f)
-                        fresh_data["trackers"] = trackers
-                        fresh_data["last_tracker_update"] = time.time()
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            json.dump(fresh_data, f, ensure_ascii=False, indent=2)
-                        logging.info("Sauvegarde des trackers réussie.")
-            except json.JSONDecodeError as e:
-                logging.error(f"Le LLM n'a pas renvoyé un JSON valide pour les trackers: {e}")
+                # Sauvegarde finale si un changement a eu lieu
+                if updated_any:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        fresh_data = json.load(f)
+                    fresh_data["trackers"] = trackers
+                    fresh_data["last_tracker_update"] = time.time()
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(fresh_data, f, ensure_ascii=False, indent=2)
+                    logging.info("Sauvegarde des trackers réussie.")
         else:
             logging.error(f"Erreur API lors du tracking global: {resp.status_code} - {resp.text}")
             
