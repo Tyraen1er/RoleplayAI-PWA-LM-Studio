@@ -11,6 +11,6 @@ pc_server/lms_proxy.log
 .DS_Store
 Thumbs.db
 
-# Ignorer les parties et sauvegardes JSON locales
-pc_server/conversations/*.json
+# Ignorer les parties et sauvegardes locales
+pc_server/conversations/*
 !pc_server/conversations/.gitkeep
