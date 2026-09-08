@@ -285,6 +285,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Gestion du clavier sur PC : Entrée pour envoyer, Shift/Ctrl/Alt + Entrée pour saut de ligne
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            if (!isMobileDevice) {
+                if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) {
+                    e.preventDefault();
+                    btnSend.click();
+                } else if (e.ctrlKey || e.altKey || e.metaKey) {
+                    e.preventDefault();
+                    const start = chatInput.selectionStart;
+                    const end = chatInput.selectionEnd;
+                    chatInput.value = chatInput.value.substring(0, start) + '\n' + chatInput.value.substring(end);
+                    chatInput.selectionStart = chatInput.selectionEnd = start + 1;
+                    chatInput.dispatchEvent(new Event('input'));
+                }
+            }
+        }
+    });
+
     // Chargement d'une conversation spécifique
     async function openConversation(convId) {
         try {
