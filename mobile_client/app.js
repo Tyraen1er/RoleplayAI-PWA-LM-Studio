@@ -646,35 +646,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- PLEIN ÉCRAN ---
-    function getFullscreenElement() {
-        return document.fullscreenElement || document.webkitFullscreenElement;
+    // --- PLEIN ÉCRAN FENÊTRE ---
+    function isChatFullscreen() {
+        return chatPanel.classList.contains('fullscreen-view');
     }
 
     function toggleChatFullscreen() {
-        if (getFullscreenElement()) {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
-            }
+        const isFull = chatPanel.classList.toggle('fullscreen-view');
+        if (isFull) {
+            document.body.style.overflow = 'hidden';
         } else {
-            if (chatPanel.requestFullscreen) {
-                chatPanel.requestFullscreen().catch(err => console.error('[Fullscreen] Erreur :', err));
-            } else if (chatPanel.webkitRequestFullscreen) {
-                chatPanel.webkitRequestFullscreen();
-            }
+            document.body.style.overflow = '';
         }
+        updateFullscreenButton();
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
     function updateFullscreenButton() {
-        btnFullscreen.textContent = getFullscreenElement() ? '✕' : '⛶';
-        btnFullscreen.title = getFullscreenElement() ? 'Quitter le plein écran' : 'Plein écran';
+        const isFull = isChatFullscreen();
+        btnFullscreen.textContent = isFull ? '✕' : '⛶';
+        btnFullscreen.title = isFull ? 'Quitter le plein écran' : 'Plein écran';
     }
 
     btnFullscreen.addEventListener('click', toggleChatFullscreen);
-    document.addEventListener('fullscreenchange', updateFullscreenButton);
-    document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+
+    // Quitter le plein écran avec Échap
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isChatFullscreen()) {
+            if (trackersModal.style.display === 'none' && systemModal.style.display === 'none') {
+                toggleChatFullscreen();
+            }
+        }
+    });
 
     // Charger les conversations
     async function loadConversations() {
