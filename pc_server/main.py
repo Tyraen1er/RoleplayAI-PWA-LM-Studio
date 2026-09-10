@@ -489,17 +489,17 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             return  # Aucun tracking actif
             
         prompt = (
-            "You are a state-tracking AI for a text adventure game. Your ONLY task is to update the values of EXISTING trackers/items based on the latest narrative event.\n\n"
+            "You are a state-tracking AI for a text adventure game. Your task is to update the player's tracking sheets based on the latest narrative event.\n\n"
             f"Current state across all existing categories (including descriptions and items):\n{json.dumps(trackers, indent=2, ensure_ascii=False)}\n\n"
             f"Latest event:\nPlayer: {last_action}\nGame: {ai_response}\n\n"
-            "STRICT RULES:\n"
-            "1. You are strictly FORBIDDEN from creating or inventing new categories. Only evaluate the existing categories listed in Current State.\n"
-            "2. You are strictly FORBIDDEN from creating or adding new item keys. Only update existing item keys that already exist in Current State.\n"
-            "3. If no existing item key value has changed in the narrative event, return an empty JSON object: {}\n"
-            "4. If any existing item key's value has changed, return a JSON object with existing category names as keys, and objects containing ONLY the modified existing item keys and their updated values.\n"
-            "   Schema: {\"<existing_category_name>\": {\"<existing_item_key>\": \"<new_value>\"}}\n"
+            "Instructions:\n"
+            "1. STRICT: You are strictly FORBIDDEN from creating or inventing new categories. You must ONLY use the existing categories listed in Current State.\n"
+            "2. Within an existing category, you can update existing items and add new items/keys if new elements matching that category's description/scope appear or are acquired.\n"
+            "3. If no state changes occurred in any existing category, return an empty JSON object: {}\n"
+            "4. If any existing category changed, return a JSON object with existing category names as keys, and objects containing ONLY the modified or newly added item keys and their updated values.\n"
+            "   Schema: {\"<existing_category_name>\": {\"<item_key>\": \"<value>\"}}\n"
             "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
-            "   - Do NOT modify or return the 'description' field, only output existing item keys and values.\n"
+            "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
             "5. Language: Strictly preserve and output all keys and values in the exact same language as used in the conversation and existing trackers.\n"
             "6. Output MUST be a valid raw JSON object matching this structure without markdown codeblocks."
         )
@@ -550,24 +550,24 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
                                 
                     target_cat = cat_name if cat_name in trackers else next((c for c in trackers.keys() if c.lower() == cat_name.lower()), None)
                     
-                    # RÈGLE STRICTE : Ne jamais créer de nouvelle catégorie, ne mettre à jour que les catégories et clés déjà créées par l'utilisateur
+                    # RÈGLE STRICTE : Ne jamais créer de nouvelle catégorie. Ne modifier ou ajouter des éléments que dans les catégories existantes.
                     if target_cat:
                         if "items" in trackers[target_cat] and isinstance(trackers[target_cat]["items"], dict):
                             existing_items = trackers[target_cat]["items"]
                             for k, v in flat_updates.items():
                                 matched_key = next((ek for ek in existing_items.keys() if ek.lower() == k.lower()), None)
-                                if matched_key:
-                                    existing_items[matched_key] = v
-                                    updated_any = True
-                                    logging.info(f"Tracker '{target_cat}' mis à jour : {matched_key} -> {v}")
+                                target_key = matched_key if matched_key else k
+                                existing_items[target_key] = v
+                                updated_any = True
+                                logging.info(f"Tracker '{target_cat}' mis à jour/ajouté : {target_key} -> {v}")
                         else:
                             for k, v in flat_updates.items():
                                 if k != "description":
                                     matched_key = next((ek for ek in trackers[target_cat].keys() if ek != "description" and ek.lower() == k.lower()), None)
-                                    if matched_key:
-                                        trackers[target_cat][matched_key] = v
-                                        updated_any = True
-                                        logging.info(f"Tracker '{target_cat}' mis à jour : {matched_key} -> {v}")
+                                    target_key = matched_key if matched_key else k
+                                    trackers[target_cat][target_key] = v
+                                    updated_any = True
+                                    logging.info(f"Tracker '{target_cat}' mis à jour/ajouté : {target_key} -> {v}")
                         
                 # Sauvegarde finale si un changement a eu lieu
                 if updated_any:
