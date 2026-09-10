@@ -11,6 +11,10 @@ pc_server/lms_proxy.log
 .DS_Store
 Thumbs.db
 
+# Ignorer les scripts de lancement locaux et raccourcis
+*.ps1
+*.lnk
+
 # Ignorer les parties et sauvegardes locales
 pc_server/conversations/*
 !pc_server/conversations/.gitkeep
