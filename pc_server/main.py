@@ -489,19 +489,21 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
             return  # Aucun tracking actif
             
         prompt = (
-            "You are a state-tracking AI for a text adventure game. Your task is to update the player's tracking sheets based on the latest narrative event.\n\n"
+            "You are a state-tracking AI for a text adventure game. Your task is to update the tracking sheet ONLY when a concrete state change happens in the immediate present action of this turn.\n\n"
             f"Current state across all existing categories (including descriptions and items):\n{json.dumps(trackers, indent=2, ensure_ascii=False)}\n\n"
             f"Latest event:\nPlayer: {last_action}\nGame: {ai_response}\n\n"
-            "Instructions:\n"
-            "1. STRICT: You are strictly FORBIDDEN from creating or inventing new categories. You must ONLY use the existing categories listed in Current State.\n"
-            "2. Within an existing category, you can update existing items and add new items/keys if new elements matching that category's description/scope appear or are acquired.\n"
-            "3. If no state changes occurred in any existing category, return an empty JSON object: {}\n"
-            "4. If any existing category changed, return a JSON object with existing category names as keys, and objects containing ONLY the modified or newly added item keys and their updated values.\n"
+            "CRITICAL RULES:\n"
+            "1. ONLY track actions and concrete state changes occurring RIGHT NOW in the immediate present narrative of this turn.\n"
+            "2. IGNORE narrative recaps, atmospheric descriptions, flashbacks, memories, future intentions, or dialogue promises (e.g. if an event happened previously or is only talked about, do NOT update).\n"
+            "3. STRICT: You are strictly FORBIDDEN from creating or inventing new categories. You must ONLY use the existing categories listed in Current State.\n"
+            "4. Within an existing category, you can update existing items and add new items/keys ONLY if new concrete elements matching that category's description/scope are acquired or changed in this exact turn.\n"
+            "5. If no new concrete state change occurred in any existing category during this exact turn, return an empty JSON object: {}\n"
+            "6. If any existing category changed, return a JSON object with existing category names as keys, and objects containing ONLY the modified or newly added item keys and their updated values.\n"
             "   Schema: {\"<existing_category_name>\": {\"<item_key>\": \"<value>\"}}\n"
             "   - NEVER delete an existing item key. If an item is lost, consumed, or depleted, set its value to '0' or 'None'.\n"
             "   - Do NOT modify or return the 'description' field, only output item keys and values.\n"
-            "5. Language: Strictly preserve and output all keys and values in the exact same language as used in the conversation and existing trackers.\n"
-            "6. Output MUST be a valid raw JSON object matching this structure without markdown codeblocks."
+            "7. Language: Strictly preserve and output all keys and values in the exact same language as used in the conversation and existing trackers.\n"
+            "8. Output MUST be a valid raw JSON object matching this structure without markdown codeblocks."
         )
         
         payload = {
