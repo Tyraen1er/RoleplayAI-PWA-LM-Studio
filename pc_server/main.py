@@ -584,11 +584,14 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
                                 matched_key = next((ek for ek in existing_items.keys() if ek.lower() == k.lower()), None)
                                 target_key = matched_key if matched_key else k
                                 old_val = existing_items.get(target_key, None)
-                                existing_items[target_key] = v
-                                updated_any = True
                                 if old_val is not None:
-                                    logging.info(f"[TRACKER UPDATE] [{target_cat} > {target_key}] État précédent: \"{old_val}\" ➔ Nouvel état: \"{v}\"")
+                                    if str(old_val).strip() != str(v).strip():
+                                        existing_items[target_key] = v
+                                        updated_any = True
+                                        logging.info(f"[TRACKER UPDATE] [{target_cat} > {target_key}] État précédent: \"{old_val}\" ➔ Nouvel état: \"{v}\"")
                                 else:
+                                    existing_items[target_key] = v
+                                    updated_any = True
                                     logging.info(f"[TRACKER AJOUT] [{target_cat} > {target_key}] État précédent: [Inexistant] ➔ Nouvel état: \"{v}\"")
                         else:
                             for k, v in flat_updates.items():
@@ -596,11 +599,14 @@ def update_trackers_background(conv_id: str, last_action: str, ai_response: str,
                                     matched_key = next((ek for ek in trackers[target_cat].keys() if ek != "description" and ek.lower() == k.lower()), None)
                                     target_key = matched_key if matched_key else k
                                     old_val = trackers[target_cat].get(target_key, None)
-                                    trackers[target_cat][target_key] = v
-                                    updated_any = True
                                     if old_val is not None:
-                                        logging.info(f"[TRACKER UPDATE] [{target_cat} > {target_key}] État précédent: \"{old_val}\" ➔ Nouvel état: \"{v}\"")
+                                        if str(old_val).strip() != str(v).strip():
+                                            trackers[target_cat][target_key] = v
+                                            updated_any = True
+                                            logging.info(f"[TRACKER UPDATE] [{target_cat} > {target_key}] État précédent: \"{old_val}\" ➔ Nouvel état: \"{v}\"")
                                     else:
+                                        trackers[target_cat][target_key] = v
+                                        updated_any = True
                                         logging.info(f"[TRACKER AJOUT] [{target_cat} > {target_key}] État précédent: [Inexistant] ➔ Nouvel état: \"{v}\"")
                         
                 # Sauvegarde finale si un changement a eu lieu
