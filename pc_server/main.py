@@ -84,6 +84,9 @@ class ChatRequest(BaseModel):
 class RenameRequest(BaseModel):
     name: str
 
+class MessageUpdateRequest(BaseModel):
+    content: str
+
 class TrackersUpdate(BaseModel):
     trackers: Dict[str, Any]
 
@@ -306,6 +309,27 @@ def rename_conversation(conv_id: str, request: RenameRequest):
         json.dump(conv_data, f, ensure_ascii=False, indent=2)
         
     return {"status": "success", "name": conv_data["name"]}
+
+@app.put("/api/conversations/{conv_id}/messages/{msg_index}")
+def update_message(conv_id: str, msg_index: int, request: MessageUpdateRequest):
+    file_path = os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+        
+    with open(file_path, 'r', encoding='utf-8') as f:
+        conv_data = json.load(f)
+        
+    messages = conv_data.get("messages", [])
+    if msg_index < 0 or msg_index >= len(messages):
+        raise HTTPException(status_code=400, detail="Index de message invalide")
+        
+    messages[msg_index]["content"] = request.content
+    conv_data["messages"] = messages
+    
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(conv_data, f, ensure_ascii=False, indent=2)
+        
+    return {"status": "success", "message": messages[msg_index]}
 
 @app.get("/api/conversations/{conv_id}/trackers")
 def get_trackers(conv_id: str):

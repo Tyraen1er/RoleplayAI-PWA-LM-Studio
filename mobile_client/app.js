@@ -139,11 +139,145 @@ document.addEventListener('DOMContentLoaded', () => {
         tokensValue.textContent = val === -1 ? '-1 (Infini)' : val;
     });
 
+    // Fonction d'édition en ligne d'un message
+    function startEditingMessage(div, contentDiv, actionsDiv) {
+        if (div.classList.contains('editing')) return;
+        div.classList.add('editing');
+
+        const originalText = contentDiv.textContent;
+        contentDiv.style.display = 'none';
+        actionsDiv.style.display = 'none';
+
+        const editContainer = document.createElement('div');
+        editContainer.className = 'message-edit-container';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'message-edit-textarea';
+        textarea.value = originalText;
+
+        function autoResize() {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.max(100, textarea.scrollHeight + 4) + 'px';
+        }
+        textarea.addEventListener('input', autoResize);
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'message-edit-buttons';
+
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'btn secondary btn-cancel-edit';
+        btnCancel.textContent = 'Annuler';
+
+        const btnSave = document.createElement('button');
+        btnSave.className = 'btn primary btn-save-edit';
+        btnSave.textContent = 'Enregistrer';
+
+        btnRow.appendChild(btnCancel);
+        btnRow.appendChild(btnSave);
+        editContainer.appendChild(textarea);
+        editContainer.appendChild(btnRow);
+        div.appendChild(editContainer);
+
+        autoResize();
+        textarea.focus();
+
+        function closeEdit() {
+            editContainer.remove();
+            contentDiv.style.display = '';
+            actionsDiv.style.display = '';
+            div.classList.remove('editing');
+        }
+
+        btnCancel.onclick = closeEdit;
+
+        btnSave.onclick = async () => {
+            const newText = textarea.value.trim();
+            if (!newText) return;
+
+            if (!currentConversationId) {
+                contentDiv.textContent = newText;
+                closeEdit();
+                return;
+            }
+
+            const allMessages = Array.from(chatMessages.querySelectorAll('.message:not(.system)'));
+            const msgIndex = allMessages.indexOf(div);
+            if (msgIndex === -1) {
+                closeEdit();
+                return;
+            }
+
+            btnSave.textContent = 'Sauvegarde...';
+            btnSave.disabled = true;
+
+            try {
+                const res = await fetch(`/api/conversations/${currentConversationId}/messages/${msgIndex}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: newText })
+                });
+
+                if (res.ok) {
+                    contentDiv.textContent = newText;
+                    closeEdit();
+                    showToast("Message modifié avec succès ! ✏️");
+                } else {
+                    const err = await res.json().catch(() => ({ detail: 'Erreur' }));
+                    showToast(`Erreur : ${err.detail || 'Impossible d\'enregistrer'}`);
+                    btnSave.textContent = 'Enregistrer';
+                    btnSave.disabled = false;
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Erreur réseau lors de la modification.");
+                btnSave.textContent = 'Enregistrer';
+                btnSave.disabled = false;
+            }
+        };
+
+        // Raccourcis clavier dans le champ d'édition : Ctrl+Entrée pour valider, Échap pour annuler
+        textarea.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                btnSave.click();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                btnCancel.click();
+            }
+        });
+    }
+
     // Fonction pour ajouter un message au DOM
     function appendMessage(role, content) {
         const div = document.createElement('div');
-        div.className = `message ${role === 'user' ? 'user' : 'ai'}`;
-        div.textContent = content;
+        div.className = `message ${role === 'user' ? 'user' : role === 'system' ? 'system' : 'ai'}`;
+        
+        if (role === 'system') {
+            div.textContent = content;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            updateChatActionsVisibility();
+            return;
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.textContent = content;
+        div.appendChild(contentDiv);
+
+        // Barre d'actions du message avec bouton d'édition
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'message-actions-bar';
+
+        const btnEdit = document.createElement('button');
+        btnEdit.className = 'btn-message-edit';
+        btnEdit.title = 'Éditer ce message';
+        btnEdit.innerHTML = '✏️';
+        btnEdit.onclick = () => startEditingMessage(div, contentDiv, actionsDiv);
+        actionsDiv.appendChild(btnEdit);
+
+        div.appendChild(actionsDiv);
+
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         updateChatActionsVisibility();

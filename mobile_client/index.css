@@ -232,6 +232,7 @@ input[type=range]::-webkit-slider-runnable-track {
 }
 
 .message {
+    position: relative;
     max-width: 85%;
     padding: 12px 16px;
     border-radius: 18px;
@@ -239,7 +240,11 @@ input[type=range]::-webkit-slider-runnable-track {
     line-height: 1.6;
     word-wrap: break-word;
     word-break: break-word;
-    white-space: pre-wrap;
+}
+
+.message.editing {
+    width: 95%;
+    max-width: 95%;
 }
 
 .message.system {
@@ -248,6 +253,7 @@ input[type=range]::-webkit-slider-runnable-track {
     color: var(--text-secondary);
     font-size: 13px;
     text-align: center;
+    white-space: pre-wrap;
 }
 
 .message.user {
@@ -262,6 +268,85 @@ input[type=range]::-webkit-slider-runnable-track {
     background-color: var(--msg-ai);
     color: var(--text-primary);
     border-bottom-left-radius: 4px;
+}
+
+.message-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.message-actions-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+    opacity: 0.35;
+    transition: opacity 0.2s ease;
+}
+
+.message:hover .message-actions-bar {
+    opacity: 1;
+}
+
+.btn-message-edit {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    transition: background 0.2s, color 0.2s, transform 0.1s;
+    line-height: 1;
+}
+
+.btn-message-edit:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    transform: scale(1.1);
+}
+
+.btn-message-edit:active {
+    transform: scale(0.95);
+}
+
+.message-edit-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+.message-edit-textarea {
+    width: 100%;
+    min-height: 120px;
+    background: var(--bg-color);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.message-edit-textarea:focus {
+    border-color: var(--accent);
+}
+
+.message-edit-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.btn-save-edit, .btn-cancel-edit {
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
 .chat-input-area {
